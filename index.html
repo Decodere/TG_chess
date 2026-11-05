@@ -352,4 +352,599 @@ const PIECE_SVGS = {
 });
 
 // =====================================================
-// 2. ШАХМАТ
+// 2. ШАХМАТНЫЙ ДВИЖОК (С РОКИРОВКОЙ И СДАЧЕЙ ПАРТИИ)
+// =====================================================
+class ChessEngine {
+  constructor() { this.reset(); }
+  reset() {
+    this.loadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    this.lastMove = null;
+    this.resignedColor = null; // 'w' или 'b', если кто-то сдался
+  }
+  loadFEN(fen) {
+    const parts = fen.trim().split(/\s+/);
+    const rows = parts[0].split('/');
+    this.board = Array.from({ length: 8 }, () => Array(8).fill(null));
+    for (let r = 0; r < 8; r++) {
+      let c = 0;
+      for (const ch of rows[r]) {
+        if (/\d/.test(ch)) c += parseInt(ch, 10);
+        else { this.board[r][c] = ch; c++; }
+      }
+    }
+    this.turn = parts[1] || 'w';
+    this.castling = parts[2] || '-';
+    this.ep = parts[3] || '-';
+  }
+  toFEN() {
+    let rows = [];
+    for (let r = 0; r < 8; r++) {
+      let empty = 0, rowStr = '';
+      for (let c = 0; c < 8; c++) {
+        const p = this.board[r][c];
+        if (!p) empty++;
+        else { if (empty) { rowStr += empty; empty = 0; } rowStr += p; }
+      }
+      if (empty) rowStr += empty;
+      rows.push(rowStr);
+    }
+    return `${rows.join('/')} ${this.turn} ${this.castling || '-'} ${this.ep || '-'} 0 1`;
+  }
+  colorOf(p) { return p ? (p === p.toUpperCase() ? 'w' : 'b') : null; }
+  inBounds(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+  findKing(color, b = this.board) {
+    const k = color === 'w' ? 'K' : 'k';
+    for (let r = 0; r < 8; r++)
+      for (let c = 0; c < 8; c++)
+        if (b[r][c] === k) return [r, c];
+    return null;
+  }
+  isAttacked(tr, tc, byColor, b = this.board) {
+    const pDir = byColor === 'w' ? 1 : -1;
+    const pChar = byColor === 'w' ? 'P' : 'p';
+    for (const dc of [-1, 1]) {
+      if (this.inBounds(tr + pDir, tc + dc) && b[tr + pDir][tc + dc] === pChar) return true;
+    }
+    const nChar = byColor === 'w' ? 'N' : 'n';
+    for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+      if (this.inBounds(tr+dr, tc+dc) && b[tr+dr][tc+dc] === nChar) return true;
+    }
+    const kChar = byColor === 'w' ? 'K' : 'k';
+    for (let dr = -1; dr <= 1; dr++)
+      for (let dc = -1; dc <= 1; dc++)
+        if ((dr || dc) && this.inBounds(tr+dr, tc+dc) && b[tr+dr][tc+dc] === kChar) return true;
+
+    const rq = byColor === 'w' ? ['R','Q'] : ['r','q'];
+    for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      let r = tr + dr, c = tc + dc;
+      while (this.inBounds(r, c)) {
+        if (b[r][c]) { if (rq.includes(b[r][c])) return true; break; }
+        r += dr; c += dc;
+      }
+    }
+    const bq = byColor === 'w' ? ['B','Q'] : ['b','q'];
+    for (const [dr, dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]) {
+      let r = tr + dr, c = tc + dc;
+      while (this.inBounds(r, c)) {
+        if (b[r][c]) { if (bq.includes(b[r][c])) return true; break; }
+        r += dr; c += dc;
+      }
+    }
+    return false;
+  }
+  inCheck(color = this.turn, b = this.board) {
+    const kp = this.findKing(color, b);
+    return kp ? this.isAttacked(kp[0], kp[1], color === 'w' ? 'b' : 'w', b) : false;
+  }
+  getLegalMovesFrom(r, c) {
+    if (this.resignedColor) return [];
+    const p = this.board[r][c];
+    if (!p || this.colorOf(p) !== this.turn) return [];
+    const pseudo = [];
+    const color = this.turn;
+    const enemy = color === 'w' ? 'b' : 'w';
+    const type = p.toUpperCase();
+
+    if (type === 'P') {
+      const dir = color === 'w' ? -1 : 1;
+      const startRow = color === 'w' ? 6 : 1;
+      if (this.inBounds(r+dir, c) && !this.board[r+dir][c]) {
+        pseudo.push({ tr: r+dir, tc: c });
+        if (r === startRow && !this.board[r+2*dir][c]) pseudo.push({ tr: r+2*dir, tc: c, epSet: true });
+      }
+      for (const dc of [-1, 1]) {
+        const nr = r + dir, nc = c + dc;
+        if (!this.inBounds(nr, nc)) continue;
+        if (this.board[nr][nc] && this.colorOf(this.board[nr][nc]) === enemy) pseudo.push({ tr: nr, tc: nc });
+        const epSq = `${String.fromCharCode(97+nc)}${8-nr}`;
+        if (this.ep === epSq) pseudo.push({ tr: nr, tc: nc, isEp: true });
+      }
+    } else if (type === 'N') {
+      for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+        const nr = r+dr, nc = c+dc;
+        if (this.inBounds(nr, nc) && this.colorOf(this.board[nr][nc]) !== color) pseudo.push({ tr: nr, tc: nc });
+      }
+    } else if (type === 'K') {
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++) {
+          if (!dr && !dc) continue;
+          const nr = r+dr, nc = c+dc;
+          if (this.inBounds(nr, nc) && this.colorOf(this.board[nr][nc]) !== color) pseudo.push({ tr: nr, tc: nc });
+        }
+      if (!this.inCheck(color)) {
+        const row = color === 'w' ? 7 : 0;
+        const rookChar = color === 'w' ? 'R' : 'r';
+        if (r === row && c === 4) {
+          const canK = this.castling.includes(color === 'w' ? 'K' : 'k');
+          if (canK && this.board[row][7] === rookChar && !this.board[row][5] && !this.board[row][6] &&
+              !this.isAttacked(row, 5, enemy) && !this.isAttacked(row, 6, enemy)) {
+            pseudo.push({ tr: row, tc: 6, castle: 'K', destCol: 6 });
+            pseudo.push({ tr: row, tc: 7, castle: 'K', destCol: 6, isRookClick: true });
+          }
+          const canQ = this.castling.includes(color === 'w' ? 'Q' : 'q');
+          if (canQ && this.board[row][0] === rookChar && !this.board[row][3] && !this.board[row][2] && !this.board[row][1] &&
+              !this.isAttacked(row, 3, enemy) && !this.isAttacked(row, 2, enemy)) {
+            pseudo.push({ tr: row, tc: 2, castle: 'Q', destCol: 2 });
+            pseudo.push({ tr: row, tc: 0, castle: 'Q', destCol: 2, isRookClick: true });
+          }
+        }
+      }
+    } else {
+      const dirs = type === 'R' ? [[-1,0],[1,0],[0,-1],[0,1]] :
+                   type === 'B' ? [[-1,-1],[-1,1],[1,-1],[1,1]] :
+                   [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+      for (const [dr, dc] of dirs) {
+        let nr = r+dr, nc = c+dc;
+        while (this.inBounds(nr, nc)) {
+          if (!this.board[nr][nc]) pseudo.push({ tr: nr, tc: nc });
+          else {
+            if (this.colorOf(this.board[nr][nc]) === enemy) pseudo.push({ tr: nr, tc: nc });
+            break;
+          }
+          nr += dr; nc += dc;
+        }
+      }
+    }
+
+    return pseudo.filter(m => {
+      if (m.castle) return true;
+      const copy = this.board.map(row => [...row]);
+      copy[m.tr][m.tc] = copy[r][c];
+      copy[r][c] = null;
+      if (m.isEp) copy[r][m.tc] = null;
+      return !this.inCheck(color, copy);
+    });
+  }
+  hasAnyLegalMoves() {
+    if (this.resignedColor) return false;
+    for (let r = 0; r < 8; r++)
+      for (let c = 0; c < 8; c++)
+        if (this.colorOf(this.board[r][c]) === this.turn && this.getLegalMovesFrom(r, c).length > 0) return true;
+    return false;
+  }
+  isGameOver() {
+    return Boolean(this.resignedColor) || !this.hasAnyLegalMoves();
+  }
+  makeMove(fr, fc, tr, tc) {
+    if (this.resignedColor) return false;
+    const legal = this.getLegalMovesFrom(fr, fc).find(m => m.tr === tr && m.tc === tc);
+    if (!legal) return false;
+    const p = this.board[fr][fc];
+    const color = this.turn;
+
+    let finalTc = tc;
+
+    if (legal.isEp) {
+      this.board[fr][tc] = null;
+    }
+
+    if (legal.castle === 'K') {
+      finalTc = 6;
+      this.board[fr][5] = this.board[fr][7];
+      this.board[fr][7] = null;
+      this.board[fr][6] = p;
+      this.board[fr][fc] = null;
+    } else if (legal.castle === 'Q') {
+      finalTc = 2;
+      this.board[fr][3] = this.board[fr][0];
+      this.board[fr][0] = null;
+      this.board[fr][2] = p;
+      this.board[fr][fc] = null;
+    } else {
+      this.board[tr][tc] = p;
+      this.board[fr][fc] = null;
+    }
+
+    if (p.toUpperCase() === 'P' && (tr === 0 || tr === 7)) {
+      this.board[tr][finalTc] = color === 'w' ? 'Q' : 'q';
+    }
+
+    if (p === 'K') this.castling = this.castling.replace(/[KQ]/g, '');
+    if (p === 'k') this.castling = this.castling.replace(/[kq]/g, '');
+    if ((fr === 7 && fc === 0) || (tr === 7 && tc === 0)) this.castling = this.castling.replace('Q', '');
+    if ((fr === 7 && fc === 7) || (tr === 7 && tc === 7)) this.castling = this.castling.replace('K', '');
+    if ((fr === 0 && fc === 0) || (tr === 0 && tc === 0)) this.castling = this.castling.replace('q', '');
+    if ((fr === 0 && fc === 7) || (tr === 0 && tc === 7)) this.castling = this.castling.replace('k', '');
+    if (!this.castling) this.castling = '-';
+
+    this.ep = legal.epSet ? `${String.fromCharCode(97+fc)}${8 - (fr + tr)/2}` : '-';
+    this.turn = color === 'w' ? 'b' : 'w';
+    this.lastMove = { fr, fc, tr, tc: finalTc };
+    return true;
+  }
+}
+
+// =====================================================
+// 3. ПРОФИЛИ ИГРОКОВ И СИНХРОНИЗАЦИЯ
+// =====================================================
+const engine = new ChessEngine();
+let selectedSq = null;
+let legalMoves = [];
+let flipped = false;
+
+const players = {
+  w: { name: 'Ожидание Белых...', username: '', photo: '' },
+  b: { name: 'Ожидание Черных...', username: '', photo: '' }
+};
+
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const urlParams = new URLSearchParams(window.location.search);
+const startParam = tg?.initDataUnsafe?.start_param || urlParams.get('startapp');
+
+const tgUser = tg?.initDataUnsafe?.user;
+const myUserId = tgUser?.id || Number(urlParams.get('uid')) || 0;
+const myFullName = tgUser
+  ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ')
+  : (urlParams.get('name') || 'Игрок');
+const myUsername = tgUser?.username ? `@${tgUser.username}` : '';
+const myPhoto = tgUser?.photo_url || '';
+
+let gameId = null;
+let whiteId = 0;
+let blackId = 0;
+let myRole = 'local'; // 'w' | 'b' | 'spectator' | 'local'
+let mqttClient = null;
+let mqttTopic = null;
+
+if (startParam) {
+  const parts = startParam.split('_');
+  gameId = parts[0];
+  whiteId = Number(parts[1] || 0);
+  blackId = Number(parts[2] || 0);
+
+  if (myUserId && myUserId === whiteId) {
+    myRole = 'w';
+    flipped = false;
+    players.w = { name: myFullName, username: myUsername, photo: myPhoto };
+  } else if (myUserId && myUserId === blackId) {
+    myRole = 'b';
+    flipped = true;
+    players.b = { name: myFullName, username: myUsername, photo: myPhoto };
+  } else {
+    myRole = 'spectator';
+  }
+
+  document.getElementById('roomTitle').textContent = `Катка #${gameId}`;
+  const badge = document.getElementById('roleBadge');
+  if (myRole === 'w') badge.textContent = '⚪️ Вы: Белые';
+  else if (myRole === 'b') badge.textContent = '⚫️ Вы: Черные';
+  else badge.textContent = '👀 Зритель';
+
+  initRealtimeSync();
+} else {
+  players.w = { name: myFullName || 'Белые', username: myUsername, photo: myPhoto };
+  players.b = { name: 'Черные', username: '', photo: '' };
+}
+
+function initRealtimeSync() {
+  mqttTopic = `tg_chess_bubble_v4_${gameId}`;
+  mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+
+  mqttClient.on('connect', () => {
+    document.getElementById('syncDot').classList.add('online');
+    mqttClient.subscribe(mqttTopic, { qos: 1 });
+
+    if (myRole === 'w' || myRole === 'b') {
+      broadcastState('join');
+    } else {
+      mqttClient.publish(mqttTopic, JSON.stringify({ type: 'sync_req', sender: myUserId }));
+    }
+  });
+
+  mqttClient.on('message', (t, msg) => {
+    try {
+      const data = JSON.parse(msg.toString());
+
+      if (data.players) {
+        if (data.players.w && data.players.w.name && !data.players.w.name.startsWith('Ожидание')) {
+          players.w = data.players.w;
+        }
+        if (data.players.b && data.players.b.name && !data.players.b.name.startsWith('Ожидание')) {
+          players.b = data.players.b;
+        }
+        updatePlayerBars();
+      }
+
+      if (data.sender && data.sender === myUserId) return;
+
+      if (data.type === 'sync_req' || data.type === 'join') {
+        if (myRole === 'w' || myRole === 'b') {
+          broadcastState('sync_resp');
+        }
+        return;
+      }
+
+      if (data.type === 'move' || data.type === 'sync_resp' || data.type === 'reset' || data.type === 'resign') {
+        if (data.type === 'reset') {
+          engine.reset();
+          showToast('🔁 Начата новая партия!');
+        } else if (data.type === 'resign') {
+          if (data.fen) engine.loadFEN(data.fen);
+          engine.resignedColor = data.resignedColor || null;
+          const loserName = engine.resignedColor === 'w' ? players.w.name : players.b.name;
+          showToast(`🏳️ ${loserName} сдался!`);
+          if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        } else if (data.fen) {
+          engine.loadFEN(data.fen);
+          engine.lastMove = data.lastMove || null;
+          engine.resignedColor = data.resignedColor || null;
+          if (data.type === 'move') showToast('♟ Соперник сделал ход');
+        }
+        selectedSq = null;
+        legalMoves = [];
+        renderBoard();
+      }
+    } catch (e) {}
+  });
+}
+
+function broadcastState(type = 'move') {
+  if (!mqttClient || !mqttClient.connected || !mqttTopic) return;
+  mqttClient.publish(mqttTopic, JSON.stringify({
+    type,
+    fen: engine.toFEN(),
+    lastMove: engine.lastMove,
+    resignedColor: engine.resignedColor,
+    players: players,
+    sender: myUserId || Math.random()
+  }), { retain: true, qos: 1 });
+}
+
+// =====================================================
+// 4. ОТРИСОВКА ДОСКИ И ПЛАШЕК
+// =====================================================
+function getInitials(name, fallback) {
+  if (!name || name.startsWith('Ожидание')) return fallback;
+  const words = name.trim().split(/\s+/);
+  return words.slice(0, 2).map(w => w[0]).join('').toUpperCase();
+}
+
+function renderPlayerCard(prefix, color) {
+  const p = players[color];
+  const nameEl = document.getElementById(`${prefix}Name`);
+  const subEl = document.getElementById(`${prefix}Sub`);
+  const imgEl = document.getElementById(`${prefix}Avatar`);
+  const initEl = document.getElementById(`${prefix}Initials`);
+
+  nameEl.textContent = p.name || (color === 'w' ? 'Белые' : 'Черные');
+  const colorLabel = color === 'w' ? '⚪️ Белые' : '⚫️ Черные';
+  subEl.textContent = p.username ? `${colorLabel} • ${p.username}` : colorLabel;
+
+  if (p.photo) {
+    imgEl.src = p.photo;
+    imgEl.style.display = 'block';
+    initEl.style.display = 'none';
+    imgEl.onerror = () => {
+      imgEl.style.display = 'none';
+      initEl.style.display = 'block';
+      initEl.textContent = getInitials(p.name, color === 'w' ? '⚪️' : '⚫️');
+    };
+  } else {
+    imgEl.style.display = 'none';
+    initEl.style.display = 'block';
+    initEl.textContent = getInitials(p.name, color === 'w' ? '⚪️' : '⚫️');
+  }
+}
+
+function updatePlayerBars() {
+  const bottomColor = flipped ? 'b' : 'w';
+  const topColor = flipped ? 'w' : 'b';
+
+  renderPlayerCard('bottom', bottomColor);
+  renderPlayerCard('top', topColor);
+
+  const gameOver = engine.isGameOver();
+  const isBottomTurn = !gameOver && engine.turn === bottomColor;
+  const isTopTurn = !gameOver && engine.turn === topColor;
+
+  document.getElementById('bottomBar').classList.toggle('active-turn', isBottomTurn);
+  document.getElementById('topBar').classList.toggle('active-turn', isTopTurn);
+
+  document.getElementById('bottomTurnPill').textContent = gameOver ? 'Завершено' : (isBottomTurn ? 'Ход сейчас' : 'Ожидание');
+  document.getElementById('topTurnPill').textContent = gameOver ? 'Завершено' : (isTopTurn ? 'Ход сейчас' : 'Ожидание');
+
+  const statusEl = document.getElementById('statusText');
+  statusEl.classList.toggle('game-over', gameOver);
+
+  // Управление активностью кнопки "Сдаться"
+  const resignBtn = document.getElementById('resignBtn');
+  if (resignBtn) {
+    resignBtn.disabled = gameOver || myRole === 'spectator';
+  }
+
+  if (engine.resignedColor) {
+    const loserLabel = engine.resignedColor === 'w' ? 'Белые сдались' : 'Черные сдались';
+    const winnerObj = engine.resignedColor === 'w' ? players.b : players.w;
+    statusEl.textContent = `🏳️ ${loserLabel}! Победил ${winnerObj.name} 🏆`;
+    return;
+  }
+
+  const hasMoves = engine.hasAnyLegalMoves();
+  const check = engine.inCheck(engine.turn);
+
+  if (!hasMoves) {
+    if (check) {
+      const winnerObj = engine.turn === 'w' ? players.b : players.w;
+      statusEl.textContent = `🏆 Мат! Победил ${winnerObj.name}`;
+    } else {
+      statusEl.textContent = '🤝 Пат! Ничья';
+    }
+  } else {
+    const activePlayer = engine.turn === 'w' ? players.w.name : players.b.name;
+    const icon = engine.turn === 'w' ? '⚪️' : '⚫️';
+    statusEl.textContent = check ? `${icon} Ход: ${activePlayer} (ШАХ! ⚡️)` : `${icon} Ход: ${activePlayer}`;
+  }
+}
+
+function renderBoard() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+
+  const inCheck = engine.inCheck(engine.turn);
+  const kingPos = inCheck ? engine.findKing(engine.turn) : null;
+
+  for (let vr = 0; vr < 8; vr++) {
+    for (let vc = 0; vc < 8; vc++) {
+      const r = flipped ? 7 - vr : vr;
+      const c = flipped ? 7 - vc : vc;
+
+      const sq = document.createElement('div');
+      sq.className = `sq ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
+
+      if (selectedSq && selectedSq.r === r && selectedSq.c === c) sq.classList.add('selected');
+      if (engine.lastMove && ((engine.lastMove.fr === r && engine.lastMove.fc === c) || (engine.lastMove.tr === r && engine.lastMove.tc === c))) {
+        sq.classList.add('last-move');
+      }
+      if (kingPos && kingPos[0] === r && kingPos[1] === c) sq.classList.add('in-check');
+
+      if (vc === 0) {
+        const rank = document.createElement('span');
+        rank.className = 'coord-rank';
+        rank.textContent = 8 - r;
+        sq.appendChild(rank);
+      }
+      if (vr === 7) {
+        const file = document.createElement('span');
+        file.className = 'coord-file';
+        file.textContent = String.fromCharCode(97 + c);
+        sq.appendChild(file);
+      }
+
+      const p = engine.board[r][c];
+      if (p) sq.insertAdjacentHTML('beforeend', PIECE_SVGS[p]);
+
+      const moveHit = legalMoves.find(m => m.tr === r && m.tc === c);
+      if (moveHit) {
+        const indicator = document.createElement('div');
+        if (moveHit.castle) {
+          indicator.className = moveHit.isRookClick ? 'castle-ring' : 'move-dot';
+        } else {
+          indicator.className = p || moveHit.isEp ? 'capture-ring' : 'move-dot';
+        }
+        sq.appendChild(indicator);
+      }
+
+      sq.onclick = () => onSquareClick(r, c);
+      boardEl.appendChild(sq);
+    }
+  }
+
+  updatePlayerBars();
+}
+
+function onSquareClick(r, c) {
+  if (engine.isGameOver()) {
+    showToast('🏁 Партия завершена! Нажмите «Реванш»');
+    return;
+  }
+  if (myRole === 'spectator') {
+    showToast('👀 Вы зритель этой партии');
+    return;
+  }
+  if ((myRole === 'w' || myRole === 'b') && engine.turn !== myRole) {
+    showToast('⏳ Подождите, сейчас ход соперника!');
+    return;
+  }
+
+  if (selectedSq && legalMoves.some(m => m.tr === r && m.tc === c)) {
+    if (engine.makeMove(selectedSq.r, selectedSq.c, r, c)) {
+      selectedSq = null;
+      legalMoves = [];
+      renderBoard();
+      broadcastState('move');
+      if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+      return;
+    }
+  }
+
+  const clickedPiece = engine.board[r][c];
+  if (clickedPiece && engine.colorOf(clickedPiece) === engine.turn) {
+    selectedSq = { r, c };
+    legalMoves = engine.getLegalMovesFrom(r, c);
+  } else {
+    selectedSq = null;
+    legalMoves = [];
+  }
+  renderBoard();
+}
+
+function flipBoard() {
+  flipped = !flipped;
+  renderBoard();
+}
+
+function executeResign() {
+  // В мультиплеере сдается именно тот цвет, за который сидит игрок. В локальном тесте — чей ход.
+  const resigningSide = (myRole === 'w' || myRole === 'b') ? myRole : engine.turn;
+  engine.resignedColor = resigningSide;
+  selectedSq = null;
+  legalMoves = [];
+  renderBoard();
+  broadcastState('resign');
+  showToast('🏳️ Вы признали поражение');
+}
+
+function requestResign() {
+  if (myRole === 'spectator') {
+    showToast('👀 Зрители не могут сдаться');
+    return;
+  }
+  if (engine.isGameOver()) return;
+
+  if (tg?.showConfirm) {
+    tg.showConfirm('Вы уверены, что хотите сдаться и признать поражение?', (confirmed) => {
+      if (confirmed) executeResign();
+    });
+  } else {
+    if (confirm('Вы уверены, что хотите сдаться?')) executeResign();
+  }
+}
+
+function requestReset() {
+  if (myRole === 'spectator') {
+    showToast('👀 Зрители не могут перезапускать партию');
+    return;
+  }
+  engine.reset();
+  selectedSq = null;
+  legalMoves = [];
+  renderBoard();
+  broadcastState('reset');
+  showToast('🔁 Начата новая партия!');
+}
+
+let toastTimer = null;
+function showToast(text) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+renderBoard();
+</script>
+</body>
+</html>
