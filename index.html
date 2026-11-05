@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Telegram Chess — Multiplayer</title>
-  <!-- Официальный SDK Telegram Mini Apps и MQTT для мгновенной синхронизации без сервера -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
@@ -62,10 +61,11 @@
       height: 8px;
       border-radius: 50%;
       background: #eab308;
-      margin-right: 5px;
+      margin-right: 6px;
     }
     .sync-dot.online { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
 
+    /* Плашки игроков с аватарками */
     .player-bar {
       background: var(--card);
       border: 1px solid var(--card-border);
@@ -74,19 +74,80 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: border-color 0.2s;
+      transition: all 0.2s;
     }
     .player-bar.active-turn {
       border-color: var(--accent);
-      box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.22);
     }
-    .player-info { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+    .player-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .avatar-wrap {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      overflow: hidden;
+      border: 2px solid #334155;
+    }
+    .player-bar.active-turn .avatar-wrap {
+      border-color: var(--accent);
+    }
+    .avatar-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .color-dot {
+      position: absolute;
+      bottom: -2px;
+      right: -2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid var(--card);
+    }
+    .color-dot.white { background: #f8fafc; }
+    .color-dot.black { background: #0f172a; border-color: #94a3b8; }
+
+    .name-stack {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .player-name {
+      font-weight: 700;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 185px;
+    }
+    .player-sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
     .turn-pill {
       font-size: 11px;
-      padding: 3px 8px;
+      padding: 4px 9px;
       border-radius: 6px;
       background: #334155;
       color: var(--muted);
+      flex-shrink: 0;
     }
     .player-bar.active-turn .turn-pill {
       background: var(--accent);
@@ -102,613 +163,3 @@
       overflow: hidden;
       border: 2px solid var(--card-border);
       box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-    }
-    .board {
-      width: 100%;
-      height: 100%;
-      display: grid;
-      grid-template-columns: repeat(8, 1fr);
-      grid-template-rows: repeat(8, 1fr);
-    }
-    .sq {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
-    .sq.light { background: var(--sq-light); }
-    .sq.dark { background: var(--sq-dark); }
-    .sq.selected { background: var(--sq-sel) !important; }
-    .sq.last-move { background: var(--sq-last) !important; }
-    .sq.in-check { background: var(--sq-check) !important; }
-
-    .coord-rank, .coord-file {
-      position: absolute;
-      font-size: 9px;
-      font-weight: 700;
-      pointer-events: none;
-      opacity: 0.75;
-    }
-    .coord-rank { top: 2px; left: 3px; }
-    .coord-file { bottom: 1px; right: 3px; }
-    .sq.light .coord-rank, .sq.light .coord-file { color: #334155; }
-    .sq.dark .coord-rank, .sq.dark .coord-file { color: #e2e8f0; }
-
-    .move-dot {
-      width: 26%;
-      height: 26%;
-      border-radius: 50%;
-      background: rgba(15, 23, 42, 0.45);
-      pointer-events: none;
-    }
-    .capture-ring {
-      position: absolute;
-      width: 82%;
-      height: 82%;
-      border-radius: 50%;
-      border: 4px solid rgba(239, 68, 68, 0.65);
-      pointer-events: none;
-    }
-    .piece-svg {
-      width: 84%;
-      height: 84%;
-      pointer-events: none;
-      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35));
-    }
-
-    .status-bar {
-      background: var(--card);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 10px 12px;
-      text-align: center;
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .controls {
-      display: flex;
-      gap: 8px;
-    }
-    .btn {
-      flex: 1;
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid var(--card-border);
-      background: var(--card);
-      color: var(--text);
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .btn:active { transform: scale(0.98); }
-
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%) translateY(20px);
-      background: rgba(15, 23, 42, 0.95);
-      border: 1px solid var(--accent);
-      color: #fff;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
-      opacity: 0;
-      pointer-events: none;
-      transition: all 0.25s ease;
-      z-index: 100;
-    }
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  </style>
-</head>
-<body>
-
-<div class="container">
-  <!-- Инфо о комнате и роли -->
-  <div class="room-banner">
-    <div><span id="syncDot" class="sync-dot"></span><span id="roomTitle">Локальная партия</span></div>
-    <div id="roleBadge" class="role-badge">🎮 Хотсит / Тест</div>
-  </div>
-
-  <!-- Верхний игрок (Соперник) -->
-  <div id="topBar" class="player-bar">
-    <div class="player-info">
-      <span id="topIcon">⚫️</span>
-      <span id="topName">Черные</span>
-    </div>
-    <span id="topTurnPill" class="turn-pill">Ожидание</span>
-  </div>
-
-  <!-- Шахматная доска -->
-  <div class="board-wrap">
-    <div id="board" class="board"></div>
-  </div>
-
-  <!-- Нижний игрок (Вы) -->
-  <div id="bottomBar" class="player-bar active-turn">
-    <div class="player-info">
-      <span id="bottomIcon">⚪️</span>
-      <span id="bottomName">Белые</span>
-    </div>
-    <span id="bottomTurnPill" class="turn-pill">Ваш ход</span>
-  </div>
-
-  <!-- Статус партии -->
-  <div id="statusText" class="status-bar">⚪️ Ход Белых</div>
-
-  <!-- Кнопки управления -->
-  <div class="controls">
-    <button class="btn" onclick="flipBoard()">🔄 Перевернуть доску</button>
-    <button id="resetBtn" class="btn" onclick="requestReset()">🏳️ Новая партия</button>
-  </div>
-</div>
-
-<div id="toast" class="toast"></div>
-
-<script>
-// =====================================================
-// 1. ВЕКТОРНЫЕ SVG ФИГУРЫ (БЕЗ ВНЕШНИХ КАРТИНОК)
-// =====================================================
-const PIECE_SVGS = {
-  P: `<svg class="piece-svg" viewBox="0 0 45 45"><path d="M 22.5,9 C 19.5,9 17,11.5 17,14.5 C 17,16.8 18.4,18.7 20.4,19.5 C 17,21 14.5,24.5 14.5,29 L 30.5,29 C 30.5,24.5 28,21 24.6,19.5 C 26.6,18.7 28,16.8 28,14.5 C 28,11.5 25.5,9 22.5,9 z M 11.5,33 L 33.5,33 L 33.5,36 L 11.5,36 L 11.5,33 z" fill="#fff" stroke="#1e293b" stroke-width="2.2"/></svg>`,
-  N: `<svg class="piece-svg" viewBox="0 0 45 45"><path d="M 22,10 C 32.5,11 38.5,18 38,39 L 15,39 C 15,30 25,32.5 23,18 M 24,18 C 24.38,20.91 18.45,25.37 16,27 C 13,29 13.18,31.34 11,31 C 9.958,30.06 12.41,27.96 11,28 C 10,28 11.19,29.23 10,30 C 9,30 5.997,31 6,26 C 6,24 12,14 12,14 C 12,14 13.89,12.1 14,10.5 C 13.27,9.506 13.5,8.5 13.5,7.5 C 14.5,6.5 16.5,10 16.5,10 L 18.5,10 C 18.5,10 19.28,8.008 21,7 C 22,7 22,10 22,10" fill="#fff" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"/></svg>`,
-  B: `<svg class="piece-svg" viewBox="0 0 45 45"><g fill="#fff" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"><path d="M 9,36 C 12.39,35.03 19.11,36.43 22.5,34 C 25.89,36.43 32.61,35.03 36,36 C 36,36 37.65,36.54 39,38 C 38.32,38.97 37.35,38.99 36,38.5 C 32.61,37.53 25.89,38.96 22.5,37.5 C 19.11,38.96 12.39,37.53 9,38.5 C 7.646,38.99 6.677,38.97 6,38 C 7.354,36.06 9,36 9,36 z"/><path d="M 15,32 C 17.5,34.5 27.5,34.5 30,32 C 30.5,30.5 30,30 30,30 C 30,27.5 27.5,26 27.5,26 C 33,24.5 33.5,14.5 22.5,10.5 C 11.5,14.5 12,24.5 17.5,26 C 17.5,26 15,27.5 15,30 C 15,30 14.5,30.5 15,32 z"/><circle cx="22.5" cy="8" r="2.2"/></g></svg>`,
-  R: `<svg class="piece-svg" viewBox="0 0 45 45"><g fill="#fff" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"><path d="M 9,39 L 36,39 L 36,36 L 9,36 L 9,39 z M 12,36 L 12,32 L 33,32 L 33,36 L 12,36 z M 11,14 L 11,9 L 15,9 L 15,11 L 20,11 L 20,9 L 25,9 L 25,11 L 30,11 L 30,9 L 34,9 L 34,14"/><path d="M 34,14 L 31,17 L 14,17 L 11,14"/><path d="M 31,17 L 31,29.5 L 14,29.5 L 14,17"/></g></svg>`,
-  Q: `<svg class="piece-svg" viewBox="0 0 45 45"><g fill="#fff" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"><path d="M 8,12 A 2,2 0 1 1 4,12 A 2,2 0 1 1 8,12 z M 24.5,7.5 A 2,2 0 1 1 20.5,7.5 A 2,2 0 1 1 24.5,7.5 z M 41,12 A 2,2 0 1 1 37,12 A 2,2 0 1 1 41,12 z M 16,8.5 A 2,2 0 1 1 12,8.5 A 2,2 0 1 1 16,8.5 z M 33,9 A 2,2 0 1 1 29,9 A 2,2 0 1 1 33,9 z"/><path d="M 9,26 C 17.5,24.5 30,24.5 36,26 L 38,14 L 31,25 L 31,11 L 25.5,24.5 L 22.5,9.5 L 19.5,24.5 L 14,11 L 14,25 L 7,14 L 9,26 z"/><path d="M 9,26 C 9,28 10.5,28 11.5,30 C 12.5,31.5 12.5,31 12,33.5 C 10.5,34.5 10.5,36 10.5,36 C 9,37.5 11,38.5 11,38.5 C 17.5,39.5 27.5,39.5 34,38.5 C 34,38.5 35.5,37.5 34,36 C 34,36 34.5,34.5 33,33.5 C 32.5,31 32.5,31.5 33.5,30 C 34.5,28 36,28 36,26 C 27.5,24.5 17.5,24.5 9,26 z"/></g></svg>`,
-  K: `<svg class="piece-svg" viewBox="0 0 45 45"><g fill="#fff" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"><path d="M 22.5,11.63 L 22.5,6 M 20,8 L 25,8"/><path d="M 22.5,25 C 22.5,25 27,17.5 25.5,14.5 C 25.5,14.5 24.5,12 22.5,12 C 20.5,12 19.5,14.5 19.5,14.5 C 18,17.5 22.5,25 22.5,25"/><path d="M 11.5,37 C 17,40.5 27,40.5 32.5,37 L 32.5,30 C 32.5,30 41.5,25.5 38.5,19.5 C 34.5,13 25,16 22.5,23.5 L 22.5,27 L 22.5,23.5 C 19,16 9.5,13 6.5,19.5 C 3.5,25.5 11.5,29.5 11.5,29.5 L 11.5,37 z"/></g></svg>`
-};
-['p','n','b','r','q','k'].forEach(k => {
-  PIECE_SVGS[k] = PIECE_SVGS[k.toUpperCase()]
-    .replace(/fill="#fff"/g, 'fill="#1e293b"')
-    .replace(/stroke="#1e293b"/g, 'stroke="#f8fafc"');
-});
-
-// =====================================================
-// 2. ШАХМАТНЫЙ ДВИЖОК (ПОЛНЫЕ ПРАВИЛА + FEN)
-// =====================================================
-class ChessEngine {
-  constructor() { this.reset(); }
-  reset() {
-    this.loadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    this.lastMove = null;
-  }
-  loadFEN(fen) {
-    const parts = fen.trim().split(/\s+/);
-    const rows = parts[0].split('/');
-    this.board = Array.from({ length: 8 }, () => Array(8).fill(null));
-    for (let r = 0; r < 8; r++) {
-      let c = 0;
-      for (const ch of rows[r]) {
-        if (/\d/.test(ch)) c += parseInt(ch, 10);
-        else { this.board[r][c] = ch; c++; }
-      }
-    }
-    this.turn = parts[1] || 'w';
-    this.castling = parts[2] || '-';
-    this.ep = parts[3] || '-';
-  }
-  toFEN() {
-    let rows = [];
-    for (let r = 0; r < 8; r++) {
-      let empty = 0, rowStr = '';
-      for (let c = 0; c < 8; c++) {
-        const p = this.board[r][c];
-        if (!p) empty++;
-        else { if (empty) { rowStr += empty; empty = 0; } rowStr += p; }
-      }
-      if (empty) rowStr += empty;
-      rows.push(rowStr);
-    }
-    return `${rows.join('/')} ${this.turn} ${this.castling || '-'} ${this.ep || '-'} 0 1`;
-  }
-  colorOf(p) { return p ? (p === p.toUpperCase() ? 'w' : 'b') : null; }
-  inBounds(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
-  findKing(color, b = this.board) {
-    const k = color === 'w' ? 'K' : 'k';
-    for (let r = 0; r < 8; r++)
-      for (let c = 0; c < 8; c++)
-        if (b[r][c] === k) return [r, c];
-    return null;
-  }
-  isAttacked(tr, tc, byColor, b = this.board) {
-    const pDir = byColor === 'w' ? 1 : -1;
-    const pChar = byColor === 'w' ? 'P' : 'p';
-    for (const dc of [-1, 1]) {
-      if (this.inBounds(tr + pDir, tc + dc) && b[tr + pDir][tc + dc] === pChar) return true;
-    }
-    const nChar = byColor === 'w' ? 'N' : 'n';
-    for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
-      if (this.inBounds(tr+dr, tc+dc) && b[tr+dr][tc+dc] === nChar) return true;
-    }
-    const kChar = byColor === 'w' ? 'K' : 'k';
-    for (let dr = -1; dr <= 1; dr++)
-      for (let dc = -1; dc <= 1; dc++)
-        if ((dr || dc) && this.inBounds(tr+dr, tc+dc) && b[tr+dr][tc+dc] === kChar) return true;
-
-    const rq = byColor === 'w' ? ['R','Q'] : ['r','q'];
-    for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-      let r = tr + dr, c = tc + dc;
-      while (this.inBounds(r, c)) {
-        if (b[r][c]) { if (rq.includes(b[r][c])) return true; break; }
-        r += dr; c += dc;
-      }
-    }
-    const bq = byColor === 'w' ? ['B','Q'] : ['b','q'];
-    for (const [dr, dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]) {
-      let r = tr + dr, c = tc + dc;
-      while (this.inBounds(r, c)) {
-        if (b[r][c]) { if (bq.includes(b[r][c])) return true; break; }
-        r += dr; c += dc;
-      }
-    }
-    return false;
-  }
-  inCheck(color = this.turn, b = this.board) {
-    const kp = this.findKing(color, b);
-    return kp ? this.isAttacked(kp[0], kp[1], color === 'w' ? 'b' : 'w', b) : false;
-  }
-  getLegalMovesFrom(r, c) {
-    const p = this.board[r][c];
-    if (!p || this.colorOf(p) !== this.turn) return [];
-    const pseudo = [];
-    const color = this.turn;
-    const enemy = color === 'w' ? 'b' : 'w';
-    const type = p.toUpperCase();
-
-    if (type === 'P') {
-      const dir = color === 'w' ? -1 : 1;
-      const startRow = color === 'w' ? 6 : 1;
-      if (this.inBounds(r+dir, c) && !this.board[r+dir][c]) {
-        pseudo.push({ tr: r+dir, tc: c });
-        if (r === startRow && !this.board[r+2*dir][c]) pseudo.push({ tr: r+2*dir, tc: c, epSet: true });
-      }
-      for (const dc of [-1, 1]) {
-        const nr = r + dir, nc = c + dc;
-        if (!this.inBounds(nr, nc)) continue;
-        if (this.board[nr][nc] && this.colorOf(this.board[nr][nc]) === enemy) pseudo.push({ tr: nr, tc: nc });
-        const epSq = `${String.fromCharCode(97+nc)}${8-nr}`;
-        if (this.ep === epSq) pseudo.push({ tr: nr, tc: nc, isEp: true });
-      }
-    } else if (type === 'N') {
-      for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
-        const nr = r+dr, nc = c+dc;
-        if (this.inBounds(nr, nc) && this.colorOf(this.board[nr][nc]) !== color) pseudo.push({ tr: nr, tc: nc });
-      }
-    } else if (type === 'K') {
-      for (let dr = -1; dr <= 1; dr++)
-        for (let dc = -1; dc <= 1; dc++) {
-          if (!dr && !dc) continue;
-          const nr = r+dr, nc = c+dc;
-          if (this.inBounds(nr, nc) && this.colorOf(this.board[nr][nc]) !== color) pseudo.push({ tr: nr, tc: nc });
-        }
-      if (!this.inCheck(color)) {
-        const row = color === 'w' ? 7 : 0;
-        if (r === row && c === 4) {
-          if (this.castling.includes(color === 'w' ? 'K' : 'k') && !this.board[row][5] && !this.board[row][6] &&
-              !this.isAttacked(row, 5, enemy) && !this.isAttacked(row, 6, enemy)) {
-            pseudo.push({ tr: row, tc: 6, castle: 'K' });
-          }
-          if (this.castling.includes(color === 'w' ? 'Q' : 'q') && !this.board[row][3] && !this.board[row][2] && !this.board[row][1] &&
-              !this.isAttacked(row, 3, enemy) && !this.isAttacked(row, 2, enemy)) {
-            pseudo.push({ tr: row, tc: 2, castle: 'Q' });
-          }
-        }
-      }
-    } else {
-      const dirs = type === 'R' ? [[-1,0],[1,0],[0,-1],[0,1]] :
-                   type === 'B' ? [[-1,-1],[-1,1],[1,-1],[1,1]] :
-                   [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
-      for (const [dr, dc] of dirs) {
-        let nr = r+dr, nc = c+dc;
-        while (this.inBounds(nr, nc)) {
-          if (!this.board[nr][nc]) pseudo.push({ tr: nr, tc: nc });
-          else {
-            if (this.colorOf(this.board[nr][nc]) === enemy) pseudo.push({ tr: nr, tc: nc });
-            break;
-          }
-          nr += dr; nc += dc;
-        }
-      }
-    }
-
-    return pseudo.filter(m => {
-      const copy = this.board.map(row => [...row]);
-      copy[m.tr][m.tc] = copy[r][c];
-      copy[r][c] = null;
-      if (m.isEp) copy[r][m.tc] = null;
-      return !this.inCheck(color, copy);
-    });
-  }
-  hasAnyLegalMoves() {
-    for (let r = 0; r < 8; r++)
-      for (let c = 0; c < 8; c++)
-        if (this.colorOf(this.board[r][c]) === this.turn && this.getLegalMovesFrom(r, c).length > 0) return true;
-    return false;
-  }
-  makeMove(fr, fc, tr, tc) {
-    const legal = this.getLegalMovesFrom(fr, fc).find(m => m.tr === tr && m.tc === tc);
-    if (!legal) return false;
-    const p = this.board[fr][fc];
-    const color = this.turn;
-
-    if (legal.isEp) this.board[fr][tc] = null;
-    if (legal.castle === 'K') { this.board[tr][5] = this.board[tr][7]; this.board[tr][7] = null; }
-    if (legal.castle === 'Q') { this.board[tr][3] = this.board[tr][0]; this.board[tr][0] = null; }
-
-    this.board[tr][tc] = p;
-    this.board[fr][fc] = null;
-
-    // Авто-превращение пешки в ферзя
-    if (p.toUpperCase() === 'P' && (tr === 0 || tr === 7)) {
-      this.board[tr][tc] = color === 'w' ? 'Q' : 'q';
-    }
-
-    // Обновление прав на рокировку
-    if (p === 'K') this.castling = this.castling.replace(/[KQ]/g, '');
-    if (p === 'k') this.castling = this.castling.replace(/[kq]/g, '');
-    if (fr === 7 && fc === 0 || tr === 7 && tc === 0) this.castling = this.castling.replace('Q', '');
-    if (fr === 7 && fc === 7 || tr === 7 && tc === 7) this.castling = this.castling.replace('K', '');
-    if (fr === 0 && fc === 0 || tr === 0 && tc === 0) this.castling = this.castling.replace('q', '');
-    if (fr === 0 && fc === 7 || tr === 0 && tc === 7) this.castling = this.castling.replace('k', '');
-    if (!this.castling) this.castling = '-';
-
-    this.ep = legal.epSet ? `${String.fromCharCode(97+fc)}${8 - (fr + tr)/2}` : '-';
-    this.turn = color === 'w' ? 'b' : 'w';
-    this.lastMove = { fr, fc, tr, tc };
-    return true;
-  }
-}
-
-// =====================================================
-// 3. ИНИЦИАЛИЗАЦИЯ TELEGRAM MINI APP И МУЛЬТИПЛЕЕРА
-// =====================================================
-const engine = new ChessEngine();
-let selectedSq = null;
-let legalMoves = [];
-let flipped = false;
-
-// Данные комнаты из Telegram startapp
-const tg = window.Telegram?.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
-
-const urlParams = new URLSearchParams(window.location.search);
-const startParam = tg?.initDataUnsafe?.start_param || urlParams.get('startapp');
-
-let gameId = null;
-let whiteId = 0;
-let blackId = 0;
-let myUserId = tg?.initDataUnsafe?.user?.id || Number(urlParams.get('uid')) || 0;
-let myRole = 'local'; // 'w' | 'b' | 'spectator' | 'local'
-let mqttClient = null;
-let mqttTopic = null;
-
-if (startParam) {
-  const parts = startParam.split('_');
-  gameId = parts[0];
-  whiteId = Number(parts[1] || 0);
-  blackId = Number(parts[2] || 0);
-
-  if (myUserId && myUserId === whiteId) {
-    myRole = 'w';
-    flipped = false;
-  } else if (myUserId && myUserId === blackId) {
-    myRole = 'b';
-    flipped = true; // Черным сразу поворачиваем доску черными фигурами вниз
-  } else {
-    myRole = 'spectator';
-  }
-
-  document.getElementById('roomTitle').textContent = `Катка #${gameId}`;
-  const badge = document.getElementById('roleBadge');
-  if (myRole === 'w') badge.textContent = '⚪️ Вы: Белые';
-  else if (myRole === 'b') badge.textContent = '⚫️ Вы: Черные';
-  else badge.textContent = '👀 Зритель';
-
-  initRealtimeSync();
-}
-
-function initRealtimeSync() {
-  mqttTopic = `tg_chess_bubble_v2_${gameId}`;
-  mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
-
-  mqttClient.on('connect', () => {
-    document.getElementById('syncDot').classList.add('online');
-    mqttClient.subscribe(mqttTopic, { qos: 1 });
-    // Запрашиваем состояние у второго игрока, если он уже походил
-    mqttClient.publish(mqttTopic, JSON.stringify({ type: 'sync_req', sender: myUserId }));
-  });
-
-  mqttClient.on('message', (t, msg) => {
-    try {
-      const data = JSON.parse(msg.toString());
-      if (data.sender && data.sender === myUserId) return;
-
-      if (data.type === 'sync_req' && engine.lastMove) {
-        broadcastState('sync_resp');
-        return;
-      }
-
-      if (data.type === 'move' || data.type === 'sync_resp' || data.type === 'reset') {
-        if (data.type === 'reset') {
-          engine.reset();
-          showToast('🔄 Партия перезапущена');
-        } else if (data.fen) {
-          engine.loadFEN(data.fen);
-          engine.lastMove = data.lastMove || null;
-          if (data.type === 'move') showToast('♟ Соперник сделал ход');
-        }
-        selectedSq = null;
-        legalMoves = [];
-        renderBoard();
-      }
-    } catch (e) {}
-  });
-}
-
-function broadcastState(type = 'move') {
-  if (!mqttClient || !mqttClient.connected || !mqttTopic) return;
-  mqttClient.publish(mqttTopic, JSON.stringify({
-    type,
-    fen: engine.toFEN(),
-    lastMove: engine.lastMove,
-    sender: myUserId || Math.random()
-  }), { retain: true, qos: 1 });
-}
-
-// =====================================================
-// 4. ОТРИСОВКА ДОСКИ И ОБРАБОТКА КЛИКОВ
-// =====================================================
-function renderBoard() {
-  const boardEl = document.getElementById('board');
-  boardEl.innerHTML = '';
-
-  const inCheck = engine.inCheck(engine.turn);
-  const kingPos = inCheck ? engine.findKing(engine.turn) : null;
-
-  for (let vr = 0; vr < 8; vr++) {
-    for (let vc = 0; vc < 8; vc++) {
-      const r = flipped ? 7 - vr : vr;
-      const c = flipped ? 7 - vc : vc;
-
-      const sq = document.createElement('div');
-      sq.className = `sq ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
-
-      if (selectedSq && selectedSq.r === r && selectedSq.c === c) sq.classList.add('selected');
-      if (engine.lastMove && ((engine.lastMove.fr === r && engine.lastMove.fc === c) || (engine.lastMove.tr === r && engine.lastMove.tc === c))) {
-        sq.classList.add('last-move');
-      }
-      if (kingPos && kingPos[0] === r && kingPos[1] === c) sq.classList.add('in-check');
-
-      if (vc === 0) {
-        const rank = document.createElement('span');
-        rank.className = 'coord-rank';
-        rank.textContent = 8 - r;
-        sq.appendChild(rank);
-      }
-      if (vr === 7) {
-        const file = document.createElement('span');
-        file.className = 'coord-file';
-        file.textContent = String.fromCharCode(97 + c);
-        sq.appendChild(file);
-      }
-
-      const p = engine.board[r][c];
-      if (p) sq.insertAdjacentHTML('beforeend', PIECE_SVGS[p]);
-
-      const moveHit = legalMoves.find(m => m.tr === r && m.tc === c);
-      if (moveHit) {
-        const indicator = document.createElement('div');
-        indicator.className = p || moveHit.isEp ? 'capture-ring' : 'move-dot';
-        sq.appendChild(indicator);
-      }
-
-      sq.onclick = () => onSquareClick(r, c);
-      boardEl.appendChild(sq);
-    }
-  }
-
-  updatePlayerBars();
-}
-
-function updatePlayerBars() {
-  const bottomColor = flipped ? 'b' : 'w';
-  const topColor = flipped ? 'w' : 'b';
-
-  document.getElementById('bottomIcon').textContent = bottomColor === 'w' ? '⚪️' : '⚫️';
-  document.getElementById('bottomName').textContent = bottomColor === 'w' ? 'Белые' : 'Черные';
-  document.getElementById('topIcon').textContent = topColor === 'w' ? '⚪️' : '⚫️';
-  document.getElementById('topName').textContent = topColor === 'w' ? 'Белые' : 'Черные';
-
-  const isBottomTurn = engine.turn === bottomColor;
-  document.getElementById('bottomBar').classList.toggle('active-turn', isBottomTurn);
-  document.getElementById('topBar').classList.toggle('active-turn', !isBottomTurn);
-  document.getElementById('bottomTurnPill').textContent = isBottomTurn ? 'Ход сейчас' : 'Ожидание';
-  document.getElementById('topTurnPill').textContent = !isBottomTurn ? 'Ход сейчас' : 'Ожидание';
-
-  const statusEl = document.getElementById('statusText');
-  const hasMoves = engine.hasAnyLegalMoves();
-  const check = engine.inCheck(engine.turn);
-
-  if (!hasMoves) {
-    if (check) {
-      const winner = engine.turn === 'w' ? 'Черные ⚫️' : 'Белые ⚪️';
-      statusEl.textContent = `🏆 Мат! Победили ${winner}`;
-    } else {
-      statusEl.textContent = '🤝 Пат! Ничья';
-    }
-  } else {
-    const turnText = engine.turn === 'w' ? '⚪️ Ход Белых' : '⚫️ Ход Черных';
-    statusEl.textContent = check ? `${turnText} (ШАХ! ⚡️)` : turnText;
-  }
-}
-
-function onSquareClick(r, c) {
-  // Проверка прав в мультиплеере
-  if (myRole === 'spectator') {
-    showToast('👀 Вы зритель этой партии');
-    return;
-  }
-  if ((myRole === 'w' || myRole === 'b') && engine.turn !== myRole) {
-    showToast('⏳ Подождите, сейчас ход соперника!');
-    return;
-  }
-
-  // Если кликнули на доступную клетку хода — делаем ход
-  if (selectedSq && legalMoves.some(m => m.tr === r && m.tc === c)) {
-    if (engine.makeMove(selectedSq.r, selectedSq.c, r, c)) {
-      selectedSq = null;
-      legalMoves = [];
-      renderBoard();
-      broadcastState('move');
-      if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-      return;
-    }
-  }
-
-  // Выделение своей фигуры
-  const clickedPiece = engine.board[r][c];
-  if (clickedPiece && engine.colorOf(clickedPiece) === engine.turn) {
-    selectedSq = { r, c };
-    legalMoves = engine.getLegalMovesFrom(r, c);
-  } else {
-    selectedSq = null;
-    legalMoves = [];
-  }
-  renderBoard();
-}
-
-function flipBoard() {
-  flipped = !flipped;
-  renderBoard();
-}
-
-function requestReset() {
-  if (myRole === 'spectator') {
-    showToast('👀 Зрители не могут сбрасывать партию');
-    return;
-  }
-  engine.reset();
-  selectedSq = null;
-  legalMoves = [];
-  renderBoard();
-  broadcastState('reset');
-}
-
-let toastTimer = null;
-function showToast(text) {
-  const el = document.getElementById('toast');
-  el.textContent = text;
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
-}
-
-renderBoard();
-</script>
-</body>
-</html>
