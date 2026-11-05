@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Telegram Chess — Multiplayer</title>
+  <title>Bubble Chess</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
@@ -14,7 +14,6 @@
       --text: #f8fafc;
       --muted: #94a3b8;
       --accent: #38bdf8;
-      --danger: #ef4444;
       --sq-light: #e2e8f0;
       --sq-dark: #475569;
       --sq-sel: rgba(56, 189, 248, 0.55);
@@ -66,7 +65,6 @@
     }
     .sync-dot.online { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
 
-    /* Плашки игроков с аватарками */
     .player-bar {
       background: var(--card);
       border: 1px solid var(--card-border);
@@ -75,7 +73,6 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: all 0.2s;
     }
     .player-bar.active-turn {
       border-color: var(--accent);
@@ -103,9 +100,6 @@
       overflow: hidden;
       border: 2px solid #334155;
     }
-    .player-bar.active-turn .avatar-wrap {
-      border-color: var(--accent);
-    }
     .avatar-wrap img {
       width: 100%;
       height: 100%;
@@ -129,7 +123,6 @@
       font-size: 11px;
       color: var(--muted);
     }
-
     .turn-pill {
       font-size: 11px;
       padding: 4px 9px;
@@ -227,12 +220,6 @@
       font-size: 14px;
       font-weight: 600;
     }
-    .status-bar.game-over {
-      border-color: #eab308;
-      background: rgba(234, 179, 8, 0.12);
-      color: #fef08a;
-    }
-
     .controls { display: flex; gap: 8px; }
     .btn {
       flex: 1;
@@ -244,7 +231,6 @@
       font-weight: 600;
       font-size: 13px;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
     }
     .btn:active { transform: scale(0.97); }
     .btn.btn-danger {
@@ -252,10 +238,7 @@
       background: rgba(239, 68, 68, 0.12);
       color: #fca5a5;
     }
-    .btn:disabled {
-      opacity: 0.4;
-      pointer-events: none;
-    }
+    .btn:disabled { opacity: 0.4; pointer-events: none; }
 
     .toast {
       position: fixed;
@@ -286,7 +269,6 @@
     <div id="roleBadge" class="role-badge">🎮 Хотсит</div>
   </div>
 
-  <!-- Верхний игрок -->
   <div id="topBar" class="player-bar">
     <div class="player-info">
       <div class="avatar-wrap">
@@ -301,12 +283,10 @@
     <span id="topTurnPill" class="turn-pill">Ожидание</span>
   </div>
 
-  <!-- Доска -->
   <div class="board-wrap">
     <div id="board" class="board"></div>
   </div>
 
-  <!-- Нижний игрок -->
   <div id="bottomBar" class="player-bar active-turn">
     <div class="player-info">
       <div class="avatar-wrap">
@@ -323,7 +303,6 @@
 
   <div id="statusText" class="status-bar">⚪️ Ход Белых</div>
 
-  <!-- Панель из 3 кнопок: Перевернуть, Сдаться, Реванш -->
   <div class="controls">
     <button class="btn" onclick="flipBoard()">🔄 Вид</button>
     <button id="resignBtn" class="btn btn-danger" onclick="requestResign()">🏳️ Сдаться</button>
@@ -334,9 +313,6 @@
 <div id="toast" class="toast"></div>
 
 <script>
-// =====================================================
-// 1. ВЕКТОРНЫЕ SVG ФИГУРЫ
-// =====================================================
 const PIECE_SVGS = {
   P: `<svg class="piece-svg" viewBox="0 0 45 45"><path d="M 22.5,9 C 19.5,9 17,11.5 17,14.5 C 17,16.8 18.4,18.7 20.4,19.5 C 17,21 14.5,24.5 14.5,29 L 30.5,29 C 30.5,24.5 28,21 24.6,19.5 C 26.6,18.7 28,16.8 28,14.5 C 28,11.5 25.5,9 22.5,9 z M 11.5,33 L 33.5,33 L 33.5,36 L 11.5,36 L 11.5,33 z" fill="#fff" stroke="#1e293b" stroke-width="2.2"/></svg>`,
   N: `<svg class="piece-svg" viewBox="0 0 45 45"><path d="M 22,10 C 32.5,11 38.5,18 38,39 L 15,39 C 15,30 25,32.5 23,18 M 24,18 C 24.38,20.91 18.45,25.37 16,27 C 13,29 13.18,31.34 11,31 C 9.958,30.06 12.41,27.96 11,28 C 10,28 11.19,29.23 10,30 C 9,30 5.997,31 6,26 C 6,24 12,14 12,14 C 12,14 13.89,12.1 14,10.5 C 13.27,9.506 13.5,8.5 13.5,7.5 C 14.5,6.5 16.5,10 16.5,10 L 18.5,10 C 18.5,10 19.28,8.008 21,7 C 22,7 22,10 22,10" fill="#fff" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"/></svg>`,
@@ -351,15 +327,12 @@ const PIECE_SVGS = {
     .replace(/stroke="#1e293b"/g, 'stroke="#f8fafc"');
 });
 
-// =====================================================
-// 2. ШАХМАТНЫЙ ДВИЖОК (С РОКИРОВКОЙ И СДАЧЕЙ ПАРТИИ)
-// =====================================================
 class ChessEngine {
   constructor() { this.reset(); }
   reset() {
     this.loadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     this.lastMove = null;
-    this.resignedColor = null; // 'w' или 'b', если кто-то сдался
+    this.resignedColor = null;
   }
   loadFEN(fen) {
     const parts = fen.trim().split(/\s+/);
@@ -531,12 +504,9 @@ class ChessEngine {
     if (!legal) return false;
     const p = this.board[fr][fc];
     const color = this.turn;
-
     let finalTc = tc;
 
-    if (legal.isEp) {
-      this.board[fr][tc] = null;
-    }
+    if (legal.isEp) this.board[fr][tc] = null;
 
     if (legal.castle === 'K') {
       finalTc = 6;
@@ -574,9 +544,6 @@ class ChessEngine {
   }
 }
 
-// =====================================================
-// 3. ПРОФИЛИ ИГРОКОВ И СИНХРОНИЗАЦИЯ
-// =====================================================
 const engine = new ChessEngine();
 let selectedSq = null;
 let legalMoves = [];
@@ -587,8 +554,11 @@ const players = {
   b: { name: 'Ожидание Черных...', username: '', photo: '' }
 };
 
-const tg = window.Telegram?.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
+let tg = null;
+try {
+  tg = window.Telegram?.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+} catch (e) {}
 
 const urlParams = new URLSearchParams(window.location.search);
 const startParam = tg?.initDataUnsafe?.start_param || urlParams.get('startapp');
@@ -604,13 +574,13 @@ const myPhoto = tgUser?.photo_url || '';
 let gameId = null;
 let whiteId = 0;
 let blackId = 0;
-let myRole = 'local'; // 'w' | 'b' | 'spectator' | 'local'
+let myRole = 'local';
 let mqttClient = null;
 let mqttTopic = null;
 
 if (startParam) {
   const parts = startParam.split('_');
-  gameId = parts[0];
+  gameId = parts[0] || 'demo';
   whiteId = Number(parts[1] || 0);
   blackId = Number(parts[2] || 0);
 
@@ -626,11 +596,14 @@ if (startParam) {
     myRole = 'spectator';
   }
 
-  document.getElementById('roomTitle').textContent = `Катка #${gameId}`;
+  const titleEl = document.getElementById('roomTitle');
+  if (titleEl) titleEl.textContent = `Катка #${gameId}`;
   const badge = document.getElementById('roleBadge');
-  if (myRole === 'w') badge.textContent = '⚪️ Вы: Белые';
-  else if (myRole === 'b') badge.textContent = '⚫️ Вы: Черные';
-  else badge.textContent = '👀 Зритель';
+  if (badge) {
+    if (myRole === 'w') badge.textContent = '⚪️ Вы: Белые';
+    else if (myRole === 'b') badge.textContent = '⚫️ Вы: Черные';
+    else badge.textContent = '👀 Зритель';
+  }
 
   initRealtimeSync();
 } else {
@@ -639,82 +612,84 @@ if (startParam) {
 }
 
 function initRealtimeSync() {
-  mqttTopic = `tg_chess_bubble_v4_${gameId}`;
-  mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+  if (!gameId) return;
+  mqttTopic = `tg_chess_bubble_v5_${gameId}`;
+  try {
+    mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
 
-  mqttClient.on('connect', () => {
-    document.getElementById('syncDot').classList.add('online');
-    mqttClient.subscribe(mqttTopic, { qos: 1 });
+    mqttClient.on('connect', () => {
+      const dot = document.getElementById('syncDot');
+      if (dot) dot.classList.add('online');
+      mqttClient.subscribe(mqttTopic, { qos: 1 });
 
-    if (myRole === 'w' || myRole === 'b') {
-      broadcastState('join');
-    } else {
-      mqttClient.publish(mqttTopic, JSON.stringify({ type: 'sync_req', sender: myUserId }));
-    }
-  });
-
-  mqttClient.on('message', (t, msg) => {
-    try {
-      const data = JSON.parse(msg.toString());
-
-      if (data.players) {
-        if (data.players.w && data.players.w.name && !data.players.w.name.startsWith('Ожидание')) {
-          players.w = data.players.w;
-        }
-        if (data.players.b && data.players.b.name && !data.players.b.name.startsWith('Ожидание')) {
-          players.b = data.players.b;
-        }
-        updatePlayerBars();
+      if (myRole === 'w' || myRole === 'b') {
+        broadcastState('join');
+      } else {
+        mqttClient.publish(mqttTopic, JSON.stringify({ type: 'sync_req', sender: myUserId }));
       }
+    });
 
-      if (data.sender && data.sender === myUserId) return;
-
-      if (data.type === 'sync_req' || data.type === 'join') {
-        if (myRole === 'w' || myRole === 'b') {
-          broadcastState('sync_resp');
+    mqttClient.on('message', (t, msg) => {
+      try {
+        const data = JSON.parse(msg.toString());
+        if (data.players) {
+          if (data.players.w && data.players.w.name && !data.players.w.name.startsWith('Ожидание')) {
+            players.w = data.players.w;
+          }
+          if (data.players.b && data.players.b.name && !data.players.b.name.startsWith('Ожидание')) {
+            players.b = data.players.b;
+          }
+          updatePlayerBars();
         }
-        return;
-      }
 
-      if (data.type === 'move' || data.type === 'sync_resp' || data.type === 'reset' || data.type === 'resign') {
-        if (data.type === 'reset') {
-          engine.reset();
-          showToast('🔁 Начата новая партия!');
-        } else if (data.type === 'resign') {
-          if (data.fen) engine.loadFEN(data.fen);
-          engine.resignedColor = data.resignedColor || null;
-          const loserName = engine.resignedColor === 'w' ? players.w.name : players.b.name;
-          showToast(`🏳️ ${loserName} сдался!`);
-          if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-        } else if (data.fen) {
-          engine.loadFEN(data.fen);
-          engine.lastMove = data.lastMove || null;
-          engine.resignedColor = data.resignedColor || null;
-          if (data.type === 'move') showToast('♟ Соперник сделал ход');
+        if (data.sender && data.sender === myUserId) return;
+
+        if (data.type === 'sync_req' || data.type === 'join') {
+          if (myRole === 'w' || myRole === 'b') {
+            broadcastState('sync_resp');
+          }
+          return;
         }
-        selectedSq = null;
-        legalMoves = [];
-        renderBoard();
-      }
-    } catch (e) {}
-  });
+
+        if (data.type === 'move' || data.type === 'sync_resp' || data.type === 'reset' || data.type === 'resign') {
+          if (data.type === 'reset') {
+            engine.reset();
+            showToast('🔁 Начата новая партия!');
+          } else if (data.type === 'resign') {
+            if (data.fen) engine.loadFEN(data.fen);
+            engine.resignedColor = data.resignedColor || null;
+            const loserName = engine.resignedColor === 'w' ? players.w.name : players.b.name;
+            showToast(`🏳️ ${loserName} сдался!`);
+            if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+          } else if (data.fen) {
+            engine.loadFEN(data.fen);
+            engine.lastMove = data.lastMove || null;
+            engine.resignedColor = data.resignedColor || null;
+            if (data.type === 'move') showToast('♟ Соперник сделал ход');
+          }
+          selectedSq = null;
+          legalMoves = [];
+          renderBoard();
+        }
+      } catch (e) {}
+    });
+  } catch (e) {}
 }
 
 function broadcastState(type = 'move') {
   if (!mqttClient || !mqttClient.connected || !mqttTopic) return;
-  mqttClient.publish(mqttTopic, JSON.stringify({
-    type,
-    fen: engine.toFEN(),
-    lastMove: engine.lastMove,
-    resignedColor: engine.resignedColor,
-    players: players,
-    sender: myUserId || Math.random()
-  }), { retain: true, qos: 1 });
+  try {
+    mqttClient.publish(mqttTopic, JSON.stringify({
+      type,
+      fen: engine.toFEN(),
+      lastMove: engine.lastMove,
+      resignedColor: engine.resignedColor,
+      players: players,
+      sender: myUserId || Math.random()
+    }), { retain: true, qos: 1 });
+  } catch (e) {}
 }
 
-// =====================================================
-// 4. ОТРИСОВКА ДОСКИ И ПЛАШЕК
-// =====================================================
 function getInitials(name, fallback) {
   if (!name || name.startsWith('Ожидание')) return fallback;
   const words = name.trim().split(/\s+/);
@@ -722,29 +697,31 @@ function getInitials(name, fallback) {
 }
 
 function renderPlayerCard(prefix, color) {
-  const p = players[color];
+  const p = players[color] || {};
   const nameEl = document.getElementById(`${prefix}Name`);
   const subEl = document.getElementById(`${prefix}Sub`);
   const imgEl = document.getElementById(`${prefix}Avatar`);
   const initEl = document.getElementById(`${prefix}Initials`);
 
-  nameEl.textContent = p.name || (color === 'w' ? 'Белые' : 'Черные');
+  if (nameEl) nameEl.textContent = p.name || (color === 'w' ? 'Белые' : 'Черные');
   const colorLabel = color === 'w' ? '⚪️ Белые' : '⚫️ Черные';
-  subEl.textContent = p.username ? `${colorLabel} • ${p.username}` : colorLabel;
+  if (subEl) subEl.textContent = p.username ? `${colorLabel} • ${p.username}` : colorLabel;
 
-  if (p.photo) {
-    imgEl.src = p.photo;
-    imgEl.style.display = 'block';
-    initEl.style.display = 'none';
-    imgEl.onerror = () => {
+  if (imgEl && initEl) {
+    if (p.photo) {
+      imgEl.src = p.photo;
+      imgEl.style.display = 'block';
+      initEl.style.display = 'none';
+      imgEl.onerror = () => {
+        imgEl.style.display = 'none';
+        initEl.style.display = 'block';
+        initEl.textContent = getInitials(p.name, color === 'w' ? '⚪️' : '⚫️');
+      };
+    } else {
       imgEl.style.display = 'none';
       initEl.style.display = 'block';
       initEl.textContent = getInitials(p.name, color === 'w' ? '⚪️' : '⚫️');
-    };
-  } else {
-    imgEl.style.display = 'none';
-    initEl.style.display = 'block';
-    initEl.textContent = getInitials(p.name, color === 'w' ? '⚪️' : '⚫️');
+    }
   }
 }
 
@@ -759,47 +736,51 @@ function updatePlayerBars() {
   const isBottomTurn = !gameOver && engine.turn === bottomColor;
   const isTopTurn = !gameOver && engine.turn === topColor;
 
-  document.getElementById('bottomBar').classList.toggle('active-turn', isBottomTurn);
-  document.getElementById('topBar').classList.toggle('active-turn', isTopTurn);
+  const bottomBar = document.getElementById('bottomBar');
+  const topBar = document.getElementById('topBar');
+  if (bottomBar) bottomBar.classList.toggle('active-turn', isBottomTurn);
+  if (topBar) topBar.classList.toggle('active-turn', isTopTurn);
 
-  document.getElementById('bottomTurnPill').textContent = gameOver ? 'Завершено' : (isBottomTurn ? 'Ход сейчас' : 'Ожидание');
-  document.getElementById('topTurnPill').textContent = gameOver ? 'Завершено' : (isTopTurn ? 'Ход сейчас' : 'Ожидание');
+  const bPill = document.getElementById('bottomTurnPill');
+  const tPill = document.getElementById('topTurnPill');
+  if (bPill) bPill.textContent = gameOver ? 'Завершено' : (isBottomTurn ? 'Ход сейчас' : 'Ожидание');
+  if (tPill) tPill.textContent = gameOver ? 'Завершено' : (isTopTurn ? 'Ход сейчас' : 'Ожидание');
 
   const statusEl = document.getElementById('statusText');
-  statusEl.classList.toggle('game-over', gameOver);
+  if (statusEl) {
+    statusEl.classList.toggle('game-over', gameOver);
 
-  // Управление активностью кнопки "Сдаться"
-  const resignBtn = document.getElementById('resignBtn');
-  if (resignBtn) {
-    resignBtn.disabled = gameOver || myRole === 'spectator';
-  }
+    const resignBtn = document.getElementById('resignBtn');
+    if (resignBtn) resignBtn.disabled = gameOver || myRole === 'spectator';
 
-  if (engine.resignedColor) {
-    const loserLabel = engine.resignedColor === 'w' ? 'Белые сдались' : 'Черные сдались';
-    const winnerObj = engine.resignedColor === 'w' ? players.b : players.w;
-    statusEl.textContent = `🏳️ ${loserLabel}! Победил ${winnerObj.name} 🏆`;
-    return;
-  }
-
-  const hasMoves = engine.hasAnyLegalMoves();
-  const check = engine.inCheck(engine.turn);
-
-  if (!hasMoves) {
-    if (check) {
-      const winnerObj = engine.turn === 'w' ? players.b : players.w;
-      statusEl.textContent = `🏆 Мат! Победил ${winnerObj.name}`;
-    } else {
-      statusEl.textContent = '🤝 Пат! Ничья';
+    if (engine.resignedColor) {
+      const loserLabel = engine.resignedColor === 'w' ? 'Белые сдались' : 'Черные сдались';
+      const winnerObj = engine.resignedColor === 'w' ? players.b : players.w;
+      statusEl.textContent = `🏳️ ${loserLabel}! Победил ${winnerObj.name} 🏆`;
+      return;
     }
-  } else {
-    const activePlayer = engine.turn === 'w' ? players.w.name : players.b.name;
-    const icon = engine.turn === 'w' ? '⚪️' : '⚫️';
-    statusEl.textContent = check ? `${icon} Ход: ${activePlayer} (ШАХ! ⚡️)` : `${icon} Ход: ${activePlayer}`;
+
+    const hasMoves = engine.hasAnyLegalMoves();
+    const check = engine.inCheck(engine.turn);
+
+    if (!hasMoves) {
+      if (check) {
+        const winnerObj = engine.turn === 'w' ? players.b : players.w;
+        statusEl.textContent = `🏆 Мат! Победил ${winnerObj.name}`;
+      } else {
+        statusEl.textContent = '🤝 Пат! Ничья';
+      }
+    } else {
+      const activePlayer = engine.turn === 'w' ? players.w.name : players.b.name;
+      const icon = engine.turn === 'w' ? '⚪️' : '⚫️';
+      statusEl.textContent = check ? `${icon} Ход: ${activePlayer} (ШАХ! ⚡️)` : `${icon} Ход: ${activePlayer}`;
+    }
   }
 }
 
 function renderBoard() {
   const boardEl = document.getElementById('board');
+  if (!boardEl) return;
   boardEl.innerHTML = '';
 
   const inCheck = engine.inCheck(engine.turn);
@@ -833,7 +814,7 @@ function renderBoard() {
       }
 
       const p = engine.board[r][c];
-      if (p) sq.insertAdjacentHTML('beforeend', PIECE_SVGS[p]);
+      if (p && PIECE_SVGS[p]) sq.insertAdjacentHTML('beforeend', PIECE_SVGS[p]);
 
       const moveHit = legalMoves.find(m => m.tr === r && m.tc === c);
       if (moveHit) {
@@ -856,7 +837,7 @@ function renderBoard() {
 
 function onSquareClick(r, c) {
   if (engine.isGameOver()) {
-    showToast('🏁 Партия завершена! Нажмите «Реванш»');
+    showToast('🏁 Партия завершена!');
     return;
   }
   if (myRole === 'spectator') {
@@ -896,7 +877,6 @@ function flipBoard() {
 }
 
 function executeResign() {
-  // В мультиплеере сдается именно тот цвет, за который сидит игрок. В локальном тесте — чей ход.
   const resigningSide = (myRole === 'w' || myRole === 'b') ? myRole : engine.turn;
   engine.resignedColor = resigningSide;
   selectedSq = null;
@@ -914,7 +894,7 @@ function requestResign() {
   if (engine.isGameOver()) return;
 
   if (tg?.showConfirm) {
-    tg.showConfirm('Вы уверены, что хотите сдаться и признать поражение?', (confirmed) => {
+    tg.showConfirm('Вы уверены, что хотите сдаться?', (confirmed) => {
       if (confirmed) executeResign();
     });
   } else {
@@ -938,13 +918,20 @@ function requestReset() {
 let toastTimer = null;
 function showToast(text) {
   const el = document.getElementById('toast');
+  if (!el) return;
   el.textContent = text;
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
 }
 
-renderBoard();
+// Запускаем отрисовку доски принудительно сразу после загрузки DOM
+document.addEventListener('DOMContentLoaded', () => {
+  renderBoard();
+});
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  renderBoard();
+}
 </script>
 </body>
 </html>
